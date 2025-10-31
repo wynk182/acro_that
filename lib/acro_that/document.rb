@@ -78,7 +78,7 @@ module AcroThat
       widgets_by_name = {}
 
       # First pass: collect widget information
-      @resolver.each_object do |_ref, body|
+      @resolver.each_object do |ref, body|
         next unless DictScan.is_widget?(body)
 
         # Extract position from widget
@@ -120,8 +120,10 @@ module AcroThat
             end
           end
         end
+      end
 
-        # Second pass: collect all fields (both field objects and widget annotations with /T)
+      # Second pass: collect all fields (both field objects and widget annotations with /T)
+      @resolver.each_object do |ref, body|
         next unless body&.include?("/T")
 
         is_widget_field = DictScan.is_widget?(body)

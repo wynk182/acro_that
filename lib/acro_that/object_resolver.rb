@@ -341,6 +341,8 @@ module AcroThat
     end
 
     def find_startxref(bytes)
+      return nil if bytes.nil? || bytes.empty?
+
       if bytes =~ /startxref\s+(\d+)\s*%%EOF\s*\z/m
         return Integer(::Regexp.last_match(1))
       end

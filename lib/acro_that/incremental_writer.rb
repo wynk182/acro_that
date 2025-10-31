@@ -25,7 +25,6 @@ module AcroThat
       # Write patches into an object stream for efficiency
       objstm_data = AcroThat::ObjStm.create(@patches, compress: true)
       if objstm_data
-        puts "Using object stream"
         # Get the next object number for the object stream itself
         objstm_num = [max_obj + 1, @patches.map { |p| p[:ref][0] }.max.to_i + 1].max
 
@@ -127,7 +126,7 @@ module AcroThat
         trailer << " /XRefStm #{xrefstm_offset} >>\n".b
         trailer << "startxref\n#{xref_offset}\n%%EOF\n".b
 
-        original_with_newline + buf + trailer
+        result = original_with_newline + buf + trailer
 
       else
         # Fallback to individual objects if ObjStm.create fails
