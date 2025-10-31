@@ -186,6 +186,16 @@ module AcroThat
           j += 1
         end
         nil
+      when "/"
+        # PDF name token - extract until whitespace or delimiter
+        j = i
+        while j < dict_src.length
+          ch = dict_src[j]
+          # PDF names can contain most characters except NUL, whitespace, and delimiters
+          break if ch =~ /[\s<>\[\]()]/ || (ch == "/" && j > i)
+          j += 1
+        end
+        j > i ? dict_src[i...j] : nil
       else
         # atom
         m = %r{\A([^\s<>\[\]()/%]+)}.match(dict_src[i..])

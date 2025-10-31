@@ -2,191 +2,125 @@
 
 require "spec_helper"
 require "stringio"
+require "tempfile"
 
 RSpec.describe AcroThat::Document do
-  describe ".open" do
-    it "parses a PDF from StringIO" do
-      # Create a minimal PDF with AcroForm for testing
-      pdf_content = create_test_pdf
-      io = StringIO.new(pdf_content)
+  describe "#new" do
+    it "creates a document from a real PDF file" do
+      pdf_path = File.join(__dir__, "examples", "MV100-Statement-of-Fact-Fillable.pdf")
+      expect(File.exist?(pdf_path)).to be true
 
-      doc = described_class.open(io)
+      doc = described_class.new(pdf_path)
 
       expect(doc).to be_a(described_class)
-      expect(doc.objects).to be_a(Hash)
-      expect(doc.xref).to be_a(AcroThat::Xref)
-      expect(doc.xref.entries.keys).to include(1, 2, 3, 4)
+      fields = doc.list_fields
+      expect(fields).to be_an(Array)
     end
 
-    it "finds the catalog" do
-      pdf_content = create_test_pdf
-      io = StringIO.new(pdf_content)
+    it "creates a document from StringIO" do
+      pdf_path = File.join(__dir__, "examples", "MV100-Statement-of-Fact-Fillable.pdf")
+      expect(File.exist?(pdf_path)).to be true
 
-      doc = described_class.open(io)
+      io = StringIO.new(File.binread(pdf_path))
+      doc = described_class.new(io)
 
-      expect(doc.catalog).to be_a(Hash)
-      expect(doc.catalog["/Type"]).to eq("/Catalog")
+      expect(doc).to be_a(described_class)
+      fields = doc.list_fields
+      expect(fields).to be_an(Array)
+      expect(fields.length).to be > 0
     end
 
-    it "lists form fields" do
-      pdf_content = create_test_pdf
-      io = StringIO.new(pdf_content)
+    it "lists form fields from example PDF" do
+      pdf_path = File.join(__dir__, "examples", "MV100-Statement-of-Fact-Fillable.pdf")
+      expect(File.exist?(pdf_path)).to be true
 
-      doc = described_class.open(io)
+      doc = described_class.new(pdf_path)
       fields = doc.list_fields
 
       expect(fields).to be_an(Array)
-      # Should find no fields since the test PDF has empty Fields array
-      expect(fields).to be_empty
+      expect(fields.length).to be > 0
+      expect(fields.first).to be_a(AcroThat::Field)
+      expect(fields.first.name).to be_a(String)
     end
 
-    it "removes a field" do
-      pdf_content = create_test_pdf
-      io = StringIO.new(pdf_content)
+    it "removes a non-existent field" do
+      pdf_path = File.join(__dir__, "examples", "MV100-Statement-of-Fact-Fillable.pdf")
+      expect(File.exist?(pdf_path)).to be true
 
-      doc = described_class.open(io)
+      doc = described_class.new(pdf_path)
       initial_count = doc.list_fields.length
 
       # Try to remove a non-existent field
-      doc.remove_field("TestField")
+      result = doc.remove_field("NonExistentField")
       remaining_fields = doc.list_fields
 
-      # Should remain the same since field doesn't exist
+      expect(result).to be false
       expect(remaining_fields.length).to eq(initial_count)
     end
 
-    it "replaces a field" do
-      pdf_content = create_test_pdf
-      io = StringIO.new(pdf_content)
+    it "removes a field from a document" do
+      pdf_path = File.join(__dir__, "examples", "MV100-Statement-of-Fact-Fillable.pdf")
+      expect(File.exist?(pdf_path)).to be true
 
-      doc = described_class.open(io)
+      doc = described_class.new(pdf_path)
+      initial_count = doc.list_fields.length
+
+      # Try to remove a field
+      first_field = doc.list_fields.first
+      field_name = first_field.name
+      result = first_field.remove
+
+      expect(result).to be true
+
+      # Write to temp file and verify persistence by reloading
+      temp_file = Tempfile.new(["test_remove_field", ".pdf"])
+      begin
+        doc.write(temp_file.path)
+
+        # Reload and verify
+        doc2 = described_class.new(temp_file.path)
+        remaining_fields = doc2.list_fields
+
+        expect(remaining_fields.length).to eq(initial_count - 1)
+        removed_field = remaining_fields.find { |f| f.name == field_name }
+        expect(removed_field).to be_nil
+      ensure
+        temp_file.unlink
+      end
+    end
+
+    it "adds a field to a document" do
+      pdf_path = File.join(__dir__, "examples", "MV100-Statement-of-Fact-Fillable.pdf")
+      expect(File.exist?(pdf_path)).to be true
+
+      doc = described_class.new(pdf_path)
+      initial_count = doc.list_fields.length
 
       # Add a new field
-      doc.replace_field("NewField", rect: [100, 500, 200, 520], value: "Test Value")
-      fields = doc.list_fields
+      new_field_name = "TestAddedField_#{Time.now.to_i}"
+      new_field = doc.add_field(new_field_name, value: "Test Value", x: 100, y: 500, width: 200, height: 20, page: 1)
 
-      # Should find the new field
-      field_names = fields.map(&:fqn)
-      expect(field_names).to include("NewField")
-    end
+      expect(new_field).to be_a(AcroThat::Field)
+      expect(new_field.name).to eq(new_field_name)
+      expect(new_field.value).to eq("Test Value")
 
-    it "writes to StringIO" do
-      pdf_content = create_test_pdf
-      io = StringIO.new(pdf_content)
+      # Write to temp file and verify persistence by reloading
+      temp_file = Tempfile.new(["test_add_field", ".pdf"])
+      begin
+        doc.write(temp_file.path, flatten: true)
 
-      doc = described_class.open(io)
-      output = doc.write_to_string_io
+        # Reload and verify
+        doc2 = described_class.new(temp_file.path)
+        new_fields = doc2.list_fields
 
-      expect(output).to be_a(StringIO)
-      expect(output.string).to start_with("%PDF-")
-    end
+        added_field = new_fields.find { |f| f.name == new_field_name }
+        expect(added_field.value).to eq("Test Value")
+        expect(added_field.text_field?).to be true
+        expect(new_fields.length).to eq(initial_count + 1)
 
-    it "resolves objects inside object streams" do
-      # Use the actual Stamford PDF that has compressed objects
-      pdf_path = File.join(__dir__, "..", "..", "Stamford_Trade-Name-Dissolution.pdf")
-      if File.exist?(pdf_path)
-        io = StringIO.new(File.binread(pdf_path))
-        doc = described_class.open(io)
-
-        acro_ref = doc.catalog["/AcroForm"]
-        expect(acro_ref).not_to be_nil
-
-        acro = doc.deref(acro_ref)
-        expect(acro).to be_a(Hash)
-        expect(acro["/Fields"]).not_to be_nil
-      else
-        skip "Stamford PDF not found for compressed object test"
+      ensure
+        temp_file.unlink
       end
     end
-  end
-
-  describe "Read sample pdf and list all fields" do
-    it "lists all fields" do
-      pdf_path = File.join(__dir__, "..", "..", "Stamford_Trade-Name-Dissolution.pdf")
-      if File.exist?(pdf_path)
-        io = StringIO.new(File.binread(pdf_path))
-        doc = described_class.open(io)
-        fields = doc.list_fields
-        expect(fields).not_to be_nil
-        expect(fields).not_to be_empty
-        expect(fields.length).to be > 0
-        expect(fields.first).to be_a(Hash)
-        expect(fields.first["/T"]).not_to be_nil
-        expect(fields.first["/T"]).not_to be_empty
-      end
-    end
-  end
-
-  private
-
-  # Create a minimal test PDF with an AcroForm
-  def create_test_pdf
-    # This is a very basic PDF structure for testing
-    # In a real implementation, you'd want a proper test PDF
-    pdf_parts = []
-
-    # Header
-    pdf_parts << "%PDF-1.4"
-    pdf_parts << "%\xE2\xE3\xCF\xD3"
-
-    # Catalog object (1 0 obj)
-    pdf_parts << "1 0 obj"
-    pdf_parts << "<<"
-    pdf_parts << "  /Type /Catalog"
-    pdf_parts << "  /Pages 2 0 R"
-    pdf_parts << "  /AcroForm 3 0 R"
-    pdf_parts << ">>"
-    pdf_parts << "endobj"
-
-    # Pages object (2 0 obj)
-    pdf_parts << "2 0 obj"
-    pdf_parts << "<<"
-    pdf_parts << "  /Type /Pages"
-    pdf_parts << "  /Count 1"
-    pdf_parts << "  /Kids [4 0 R]"
-    pdf_parts << ">>"
-    pdf_parts << "endobj"
-
-    # AcroForm object (3 0 obj)
-    pdf_parts << "3 0 obj"
-    pdf_parts << "<<"
-    pdf_parts << "  /Fields []"
-    pdf_parts << "  /NeedAppearances false"
-    pdf_parts << ">>"
-    pdf_parts << "endobj"
-
-    # Page object (4 0 obj)
-    pdf_parts << "4 0 obj"
-    pdf_parts << "<<"
-    pdf_parts << "  /Type /Page"
-    pdf_parts << "  /Parent 2 0 R"
-    pdf_parts << "  /MediaBox [0 0 612 792]"
-    pdf_parts << "  /Contents 6 0 R"
-    pdf_parts << "  /Annots []"
-    pdf_parts << ">>"
-    pdf_parts << "endobj"
-
-    # Xref table
-    pdf_parts << "xref"
-    pdf_parts << "0 5"
-    pdf_parts << "0000000000 65535 f"  # Free object
-    pdf_parts << "0000000010 00000 n"  # Object 1 (catalog)
-    pdf_parts << "0000000050 00000 n"  # Object 2 (pages)
-    pdf_parts << "0000000100 00000 n"  # Object 3 (acroform)
-    pdf_parts << "0000000150 00000 n"  # Object 4 (page)
-
-    # Trailer
-    pdf_parts << "trailer"
-    pdf_parts << "<<"
-    pdf_parts << "  /Size 5"
-    pdf_parts << "  /Root 1 0 R"
-    pdf_parts << ">>"
-
-    pdf_parts << "startxref"
-    pdf_parts << "200"
-
-    pdf_parts << "%%EOF"
-
-    pdf_parts.join("\n")
   end
 end
