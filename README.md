@@ -36,82 +36,271 @@ gem install acro_that
 
 ```ruby
 require 'acro_that'
-require 'stringio'
 
-# Open a PDF from StringIO
+# Create a document from a file path or StringIO
+doc = AcroThat::Document.new("form.pdf")
+
+# Or from StringIO
+require 'stringio'
 pdf_data = File.binread("form.pdf")
 io = StringIO.new(pdf_data)
-doc = AcroThat::Document.open(io)
+doc = AcroThat::Document.new(io)
 
 # List all form fields
 fields = doc.list_fields
 fields.each do |field|
-  puts "#{field.fqn} (#{field.type})"
+  type_info = field.type_key ? "#{field.type} (:#{field.type_key})" : field.type
+  puts "#{field.name} (#{type_info}) = #{field.value}"
 end
 
-# Add a new field
-doc.replace_field("NameField", rect: [100, 500, 200, 520], value: "John Doe")
+# Add a new field (using symbol key for type)
+new_field = doc.add_field("NameField", 
+  value: "John Doe",
+  x: 100,
+  y: 500,
+  width: 200,
+  height: 20,
+  page: 1,
+  type: :text  # Optional: :text, :button, :choice, :signature (or "/Tx", "/Btn", etc.)
+)
+
+# Or using the PDF type string directly
+button_field = doc.add_field("CheckBox", 
+  type: "/Btn",  # Or use :button symbol
+  x: 100,
+  y: 600,
+  width: 20,
+  height: 20,
+  page: 1
+)
+
+# Update a field value
+doc.update_field("ExistingField", "New Value")
+
+# Rename a field while updating it
+doc.update_field("OldName", "New Value", new_name: "NewName")
 
 # Remove a field
-doc.remove_field("OldField")
+doc.remove_field("FieldToRemove")
 
-# Write the modified PDF
-output = doc.write_to_string_io
-File.binwrite("output.pdf", output.string)
+# Write the modified PDF to a file
+doc.write("output.pdf")
+
+# Or write with flattening (removes incremental updates)
+doc.write("output.pdf", flatten: true)
+
+# Or get PDF bytes as a String (returns String, not StringIO)
+pdf_bytes = doc.write
+File.binwrite("output.pdf", pdf_bytes)
+```
+
+### Advanced Usage
+
+#### Working with Field Objects
+
+```ruby
+doc = AcroThat::Document.new("form.pdf")
+fields = doc.list_fields
+
+# Access field properties
+field = fields.first
+puts field.name        # Field name
+puts field.value       # Field value
+puts field.type        # Field type (e.g., "/Tx")
+puts field.type_key    # Symbol key (e.g., :text) or nil if not mapped
+puts field.x           # X position
+puts field.y           # Y position
+puts field.width       # Width
+puts field.height      # Height
+puts field.page        # Page number
+
+# Fields default to "/Tx" if type is missing from PDF
+
+# Update a field directly
+field.update("New Value")
+
+# Update and rename a field
+field.update("New Value", new_name: "NewName")
+
+# Remove a field directly
+field.remove
+
+# Check field type
+field.text_field?      # true for text fields
+field.button_field?    # true for button/checkbox fields
+field.choice_field?    # true for choice/dropdown fields
+field.signature_field? # true for signature fields
+
+# Check if field has a value
+field.has_value?
+
+# Check if field has position information
+field.has_position?
+```
+
+#### Flattening PDFs
+
+```ruby
+# Flatten a PDF to remove incremental updates
+doc = AcroThat::Document.new("form.pdf")
+doc.flatten!  # Modifies the document in-place
+
+# Or create a new flattened document
+flattened_doc = AcroThat::Document.flatten_pdf("input.pdf", "output.pdf")
+
+# Or get flattened bytes
+flattened_bytes = AcroThat::Document.flatten_pdf("input.pdf")
 ```
 
 ### API Reference
 
-#### `AcroThat::Document.open(io)`
-Opens a PDF document from a StringIO object.
+#### `AcroThat::Document.new(path_or_io)`
+Creates a PDF document from a file path (String) or StringIO object.
+
+```ruby
+doc = AcroThat::Document.new("path/to/file.pdf")
+doc = AcroThat::Document.new(StringIO.new(pdf_bytes))
+```
 
 #### `#list_fields`
 Returns an array of `Field` objects representing all form fields in the document.
 
-#### `#remove_field(name)`
-Removes a form field by its name (fully qualified name or simple name).
+```ruby
+fields = doc.list_fields
+fields.each do |field|
+  puts field.name
+end
+```
 
-#### `#replace_field(name, options)`
-Replaces or adds a form field. Options include:
-- `rect`: Array of [x, y, width, height] coordinates
-- `value`: Default value for the field
-- `page`: Page number to add the field to (default: 1)
+#### `#add_field(name, options)`
+Adds a new form field to the document. Options include:
+- `value`: Default value for the field (String)
+- `x`: X coordinate (Integer, default: 100)
+- `y`: Y coordinate (Integer, default: 500)
+- `width`: Field width (Integer, default: 100)
+- `height`: Field height (Integer, default: 20)
+- `page`: Page number to add the field to (Integer, default: 1)
+- `type`: Field type (Symbol or String, default: `"/Tx"`). Options:
+  - Symbol keys: `:text`, `:button`, `:choice`, `:signature`
+  - PDF type strings: `"/Tx"`, `"/Btn"`, `"/Ch"`, `"/Sig"`
 
-#### `#write_to_string_io`
-Returns a StringIO object containing the modified PDF.
+Returns a `Field` object if successful.
+
+```ruby
+# Using symbol keys (recommended)
+field = doc.add_field("NewField", value: "Value", x: 100, y: 500, width: 200, height: 20, page: 1, type: :text)
+
+# Using PDF type strings
+field = doc.add_field("ButtonField", type: "/Btn", x: 100, y: 500, width: 20, height: 20, page: 1)
+```
+
+#### `#update_field(name, new_value, new_name: nil)`
+Updates a field's value and optionally renames it. Returns `true` if successful, `false` if field not found.
+
+```ruby
+doc.update_field("FieldName", "New Value")
+doc.update_field("OldName", "New Value", new_name: "NewName")
+```
+
+#### `#remove_field(name_or_field)`
+Removes a form field by name (String) or Field object. Returns `true` if successful, `false` if field not found.
+
+```ruby
+doc.remove_field("FieldName")
+doc.remove_field(field_object)
+```
+
+#### `#write(path_out = nil, flatten: false)`
+Writes the modified PDF. If `path_out` is provided, writes to that file path and returns `true`. If no path is provided, returns the PDF bytes as a String. The `flatten` option removes incremental updates from the PDF.
+
+```ruby
+doc.write("output.pdf")              # Write to file
+doc.write("output.pdf", flatten: true) # Write flattened PDF to file
+pdf_bytes = doc.write                 # Get PDF bytes as String
+```
+
+#### `#flatten`
+Returns flattened PDF bytes (removes incremental updates) without modifying the document.
+
+```ruby
+flattened_bytes = doc.flatten
+```
+
+#### `#flatten!`
+Flattens the PDF in-place (modifies the current document instance).
+
+```ruby
+doc.flatten!
+```
+
+#### `AcroThat::Document.flatten_pdf(input_path, output_path = nil)`
+Class method to flatten a PDF. If `output_path` is provided, writes to that path and returns the path. Otherwise returns a new `Document` instance with the flattened content.
+
+```ruby
+AcroThat::Document.flatten_pdf("input.pdf", "output.pdf")
+flattened_doc = AcroThat::Document.flatten_pdf("input.pdf")
+```
 
 ### Field Object
 
-Each field returned by `#list_fields` has the following attributes:
-- `fqn`: Fully qualified name of the field
-- `name`: Simple name of the field
-- `type`: Field type (e.g., "/Tx" for text fields)
-- `ref`: Object reference
-- `dict`: Raw field dictionary
-- `kids_count`: Number of child fields
+Each field returned by `#list_fields` is a `Field` object with the following attributes and methods:
+
+#### Attributes
+- `name`: Field name (String)
+- `value`: Field value (String or nil)
+- `type`: Field type (String, e.g., "/Tx", "/Btn", "/Ch", "/Sig"). Defaults to "/Tx" if missing from PDF.
+- `ref`: Object reference array `[object_number, generation]`
+- `x`: X coordinate (Float or nil)
+- `y`: Y coordinate (Float or nil)
+- `width`: Field width (Float or nil)
+- `height`: Field height (Float or nil)
+- `page`: Page number (Integer or nil)
+
+#### Methods
+- `#update(new_value, new_name: nil)`: Update the field's value and optionally rename it
+- `#remove`: Remove the field from the document
+- `#type_key`: Returns the symbol key for the type (e.g., `:text` for `"/Tx"`) or `nil` if not mapped
+- `#text_field?`: Returns true if field is a text field
+- `#button_field?`: Returns true if field is a button/checkbox field
+- `#choice_field?`: Returns true if field is a choice/dropdown field
+- `#signature_field?`: Returns true if field is a signature field
+- `#has_value?`: Returns true if field has a non-empty value
+- `#has_position?`: Returns true if field has position information
+- `#object_number`: Returns the object number (first element of ref)
+- `#generation`: Returns the generation number (second element of ref)
+- `#valid_ref?`: Returns true if field has a valid reference (not a placeholder)
+
+**Note**: When reading fields from a PDF, if the type is missing or empty, it defaults to `"/Tx"` (text field). The `type_key` method allows you to get the symbol representation (e.g., `:text`) from the type string.
 
 ## Example
 
-See `example.rb` for a complete demonstration of all features.
+For complete working examples, see the test files in the `spec/` directory:
+- `spec/document_spec.rb` - Basic document operations
+- `spec/form_editing_spec.rb` - Form field editing examples
+- `spec/field_editor_spec.rb` - Field object manipulation
 
 ## Architecture
 
 AcroThat is built as a minimal PDF engine with the following components:
 
-- **Parser**: Extracts PDF objects and parses basic structures
-- **Xref**: Handles cross-reference tables and object offsets
-- **Document**: Main orchestration class
-- **AcroForm**: Handles form field operations
-- **Utils**: Utility functions for PDF string handling
+- **ObjectResolver**: Resolves and extracts PDF objects from the document
+- **DictScan**: Parses PDF dictionaries and extracts field information
+- **IncrementalWriter**: Handles incremental PDF updates (appends changes)
+- **PDFWriter**: Writes complete PDF files (for flattening)
+- **Actions**: Modular actions for adding, updating, and removing fields (`AddField`, `UpdateField`, `RemoveField`)
+- **Document**: Main orchestration class that coordinates all operations
+- **Field**: Represents a form field with its properties and methods
 
 ## Limitations
 
 This is a minimal implementation focused on AcroForm manipulation. It does not support:
 
-- Complex PDF features (images, fonts, etc.)
-- Incremental updates
-- Compression/decompression
-- Full PDF rendering
+- Complex PDF features (images, fonts, advanced graphics, etc.)
+- PDF compression/decompression (streams are preserved as-is)
+- Full PDF rendering or display
+- Digital signatures (though signature fields can be added)
+- JavaScript or other interactive features
+- Form submission/validation logic
 
 ## Development
 

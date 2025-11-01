@@ -13,10 +13,19 @@ module AcroThat
       signature: "/Sig"
     }.freeze
 
+    # Reverse lookup: map type strings to symbol keys
+    TYPE_KEYS = TYPES.invert.freeze
+
     def initialize(name, value, type, ref, document = nil, position = {})
       @name = name
       @value = value
-      @type = TYPES[type] || type || "/Tx"
+      # Normalize type: accept symbol keys or type strings, default to "/Tx"
+      normalized_type = if type.is_a?(Symbol)
+                         TYPES[type] || "/Tx"
+                       else
+                         type.to_s.strip
+                       end
+      @type = normalized_type.empty? ? "/Tx" : normalized_type
       @ref = ref
       @document = document
       @x = position[:x]
@@ -78,13 +87,15 @@ module AcroThat
 
     # String representation for debugging
     def to_s
+      type_str = type.inspect
+      type_str += " (:#{type_key})" if type_key
       pos_str = if x && y && width && height
                   " x=#{x} y=#{y} w=#{width} h=#{height}"
                 else
                   " position=(unknown)"
                 end
       page_str = page ? " page=#{page}" : ""
-      "#<AcroThat::Field name=#{name.inspect} type=#{type.inspect} value=#{value.inspect} ref=#{ref.inspect}#{pos_str}#{page_str}>"
+      "#<AcroThat::Field name=#{name.inspect} type=#{type_str} value=#{value.inspect} ref=#{ref.inspect}#{pos_str}#{page_str}>"
     end
 
     alias inspect to_s
@@ -92,6 +103,12 @@ module AcroThat
     # Check if position is known
     def has_position?
       !x.nil? && !y.nil? && !width.nil? && !height.nil?
+    end
+
+    # Get the symbol key for the field type (e.g., :text for "/Tx")
+    # Returns nil if the type is not in the TYPES mapping
+    def type_key
+      TYPE_KEYS[type]
     end
 
     # Update this field's value and optionally rename it in the document
