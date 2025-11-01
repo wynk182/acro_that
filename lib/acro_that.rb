@@ -12,6 +12,7 @@ require_relative "acro_that/objstm"
 require_relative "acro_that/pdf_writer"
 require_relative "acro_that/incremental_writer"
 require_relative "acro_that/field"
+require_relative "acro_that/page"
 require_relative "acro_that/document"
 
 # Load actions

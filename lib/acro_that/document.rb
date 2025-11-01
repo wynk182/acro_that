@@ -179,13 +179,14 @@ module AcroThat
           contents_refs: contents_refs
         }
 
-        pages << {
-          page: index + 1, # Page number starting at 1
-          width: width,
-          height: height,
-          ref: ref,
-          metadata: metadata
-        }
+        pages << Page.new(
+          index + 1, # Page number starting at 1
+          width,
+          height,
+          ref,
+          metadata,
+          self # Pass document reference
+        )
       end
 
       pages

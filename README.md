@@ -234,6 +234,32 @@ fields.each do |field|
 end
 ```
 
+#### `#list_pages`
+Returns an array of `Page` objects representing all pages in the document. Each `Page` object provides page information and methods to add fields to that specific page.
+
+```ruby
+pages = doc.list_pages
+pages.each do |page|
+  puts "Page #{page.page_number}: #{page.width}x#{page.height}"
+end
+
+# Add fields to specific pages - the page is automatically set!
+first_page = pages[0]
+first_page.add_field("Name", x: 100, y: 700, width: 200, height: 20)
+
+second_page = pages[1]
+second_page.add_field("Email", x: 100, y: 650, width: 200, height: 20)
+```
+
+**Page Object Methods:**
+- `page.page_number` - Returns the page number (1-indexed)
+- `page.width` - Page width in points
+- `page.height` - Page height in points
+- `page.ref` - Page object reference `[obj_num, gen_num]`
+- `page.metadata` - Hash containing page metadata (rotation, boxes, etc.)
+- `page.add_field(name, options)` - Add a field to this page (page number is automatically set)
+- `page.to_h` - Convert to hash for backward compatibility
+
 #### `#add_field(name, options)`
 Adds a new form field to the document. Options include:
 - `value`: Default value for the field (String)
