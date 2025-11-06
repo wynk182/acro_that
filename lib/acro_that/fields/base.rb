@@ -193,7 +193,7 @@ module AcroThat
 
         af_body = get_object_body_with_patch(af_ref)
         # Use +"" instead of dup to create a mutable copy without keeping reference to original
-        patched = af_body + ""
+        patched = af_body.to_s
 
         # Step 1: Add field to /Fields array
         fields_array_ref = DictScan.value_token_after("/Fields", patched)

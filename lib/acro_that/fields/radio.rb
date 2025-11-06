@@ -74,7 +74,7 @@ module AcroThat
         return unless original_widget_body
 
         # Store original before modifying to avoid loading again
-        widget_body = original_widget_body + ""
+        widget_body = original_widget_body.to_s
 
         # Ensure we have a valid export value - if empty, generate a unique one
         # Export value must be unique for each widget in the group for mutual exclusivity
@@ -124,7 +124,7 @@ module AcroThat
           original_parent_body = get_object_body_with_patch(parent_ref)
           if original_parent_body
             # Store original before modifying
-            parent_body = original_parent_body + ""
+            parent_body = original_parent_body.to_s
             # Update parent's /V to match the selected button's export value
             parent_body = if parent_body.include?("/V")
                             DictScan.replace_key_value(parent_body, "/V", export_name)
@@ -143,7 +143,7 @@ module AcroThat
           return unless original_parent_body_for_ap
 
           # Use a working copy for modification
-          parent_body_for_ap = original_parent_body_for_ap + ""
+          parent_body_for_ap = original_parent_body_for_ap.to_s
           parent_ap_tok = DictScan.value_token_after("/AP", parent_body_for_ap)
           if parent_ap_tok && parent_ap_tok.start_with?("<<")
             n_tok = DictScan.value_token_after("/N", parent_ap_tok)

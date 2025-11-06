@@ -44,7 +44,7 @@ module AcroThat
         widget_ref = [widget_obj_num, 0]
         original_widget_body = get_object_body_with_patch(widget_ref)
         # Use +"" instead of dup to create a mutable copy without keeping reference to original
-        widget_body = original_widget_body + ""
+        widget_body = original_widget_body.to_s
 
         ap_dict = "<<\n  /N <<\n    /Yes #{yes_obj_num} 0 R\n    /Off #{off_obj_num} 0 R\n  >>\n>>"
 
