@@ -54,12 +54,14 @@ module AcroThat
       def create_field_handler(type_input)
         is_radio = [:radio, "radio"].include?(type_input)
         group_id = @options[:group_id]
+        is_button = [:button, "button", "/Btn", "/btn"].include?(type_input)
 
         if is_radio && group_id
           AcroThat::Fields::Radio.new(@document, @name, @options.merge(metadata: @metadata))
         elsif [:signature, "signature", "/Sig"].include?(type_input)
           AcroThat::Fields::Signature.new(@document, @name, @options.merge(metadata: @metadata))
-        elsif [:checkbox, "checkbox"].include?(type_input)
+        elsif [:checkbox, "checkbox"].include?(type_input) || is_button
+          # :button type maps to /Btn which are checkboxes by default (unless radio flag is set)
           AcroThat::Fields::Checkbox.new(@document, @name, @options.merge(metadata: @metadata))
         else
           # Default to text field

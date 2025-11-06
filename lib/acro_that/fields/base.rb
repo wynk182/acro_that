@@ -107,6 +107,7 @@ module AcroThat
                                  end
 
         # For radio buttons, /V should only be set if explicitly selected
+        # For checkboxes, /V should be a PDF name to match /AS format
         # For other fields, encode as PDF string
         if should_set_value && normalized_field_value && !normalized_field_value.to_s.empty?
           # For radio buttons, only set /V if selected option is explicitly set to true
@@ -115,6 +116,10 @@ module AcroThat
             if [true, "true"].include?(@options[:selected]) && normalized_field_value.to_s.start_with?("/")
               dict += "  /V #{normalized_field_value}\n"
             end
+          elsif type == "/Btn"
+            # For checkboxes (button fields that aren't radio), encode value as PDF name
+            # to match the /AS appearance state format (/Yes or /Off)
+            dict += "  /V #{DictScan.encode_pdf_name(normalized_field_value)}\n"
           else
             dict += "  /V #{DictScan.encode_pdf_string(normalized_field_value)}\n"
           end
@@ -156,10 +161,11 @@ module AcroThat
                              end
 
           if type == "/Btn" && should_set_value
+            # For checkboxes, encode value as PDF name to match /AS appearance state format
             value_str = value.to_s
             is_checked = ["Yes", "/Yes", "true"].include?(value_str) || value == true
             checkbox_value = is_checked ? "Yes" : "Off"
-            widget += "  /V #{DictScan.encode_pdf_string(checkbox_value)}\n"
+            widget += "  /V #{DictScan.encode_pdf_name(checkbox_value)}\n"
           elsif should_set_value && value && !value.empty?
             widget += "  /V #{DictScan.encode_pdf_string(value)}\n"
           end

@@ -58,12 +58,23 @@ module AcroThat
         is_checked = value_str == "Yes" || value_str == "/Yes" || value_str == "true" || @field_value == true
         normalized_value = is_checked ? "Yes" : "Off"
 
+        # Set /V to match /AS - both should be PDF names for checkboxes
+        v_value = DictScan.encode_pdf_name(normalized_value)
+
         as_value = if normalized_value == "Yes"
                      "/Yes"
                    else
                      "/Off"
                    end
 
+        # Update /V to ensure it matches /AS format (both PDF names)
+        widget_body = if widget_body.include?("/V")
+                        DictScan.replace_key_value(widget_body, "/V", v_value)
+                      else
+                        DictScan.upsert_key_value(widget_body, "/V", v_value)
+                      end
+
+        # Update /AS to match the normalized value
         widget_body = if widget_body.include?("/AS")
                         DictScan.replace_key_value(widget_body, "/AS", as_value)
                       else
@@ -74,15 +85,37 @@ module AcroThat
       end
 
       def create_checkbox_yes_appearance(width, height)
-        border_width = [width * 0.08, height * 0.08].min
         line_width = [width * 0.05, height * 0.05].min
+        border_width = [width * 0.08, height * 0.08].min
 
-        check_x1 = width * 0.25
-        check_y1 = height * 0.45
-        check_x2 = width * 0.45
-        check_y2 = height * 0.25
-        check_x3 = width * 0.75
-        check_y3 = height * 0.75
+        # Define checkmark in normalized coordinates (0-1 range) for consistent aspect ratio
+        # Checkmark shape: three points forming a checkmark
+        norm_x1 = 0.25
+        norm_y1 = 0.55
+        norm_x2 = 0.45
+        norm_y2 = 0.35
+        norm_x3 = 0.75
+        norm_y3 = 0.85
+
+        # Calculate scale to maximize size while maintaining aspect ratio
+        # Use the smaller dimension to ensure it fits
+        scale = [width, height].min * 0.85  # Use 85% of the smaller dimension
+        
+        # Calculate checkmark dimensions
+        check_width = scale
+        check_height = scale
+        
+        # Center the checkmark in the box
+        offset_x = (width - check_width) / 2
+        offset_y = (height - check_height) / 2
+        
+        # Calculate actual coordinates
+        check_x1 = offset_x + norm_x1 * check_width
+        check_y1 = offset_y + norm_y1 * check_height
+        check_x2 = offset_x + norm_x2 * check_width
+        check_y2 = offset_y + norm_y2 * check_height
+        check_x3 = offset_x + norm_x3 * check_width
+        check_y3 = offset_y + norm_y3 * check_height
 
         content_stream = "q\n"
         # Draw square border around field bounds

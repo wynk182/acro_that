@@ -178,8 +178,34 @@ module AcroThat
         ft_pattern = %r{/FT\s+/Btn}
         is_button_field = ft_pattern.match(dict_body)
 
-        normalized_value = if is_button_field
-                             # For checkboxes/radio buttons, normalize to "Yes" or "Off"
+        # Check if it's a radio button by checking field flags
+        # For widgets, check the parent field's flags since widgets don't have /Ff directly
+        is_radio = false
+        if is_button_field
+          field_flags_match = dict_body.match(%r{/Ff\s+(\d+)})
+          if field_flags_match
+            field_flags = field_flags_match[1].to_i
+            # Radio button flag is bit 15 = 32768
+            is_radio = field_flags.anybits?(32_768)
+          elsif dict_body.include?("/Parent")
+            # This is a widget - check parent field's flags
+            parent_tok = DictScan.value_token_after("/Parent", dict_body)
+            if parent_tok && parent_tok =~ /\A(\d+)\s+(\d+)\s+R/
+              parent_ref = [Integer(::Regexp.last_match(1)), Integer(::Regexp.last_match(2))]
+              parent_body = get_object_body_with_patch(parent_ref)
+              if parent_body
+                parent_flags_match = parent_body.match(%r{/Ff\s+(\d+)})
+                if parent_flags_match
+                  parent_flags = parent_flags_match[1].to_i
+                  is_radio = parent_flags.anybits?(32_768)
+                end
+              end
+            end
+          end
+        end
+
+        normalized_value = if is_button_field && !is_radio
+                             # For checkboxes, normalize to "Yes" or "Off"
                              # Accept "Yes", "/Yes" (PDF name format), true (boolean), or "true" (string)
                              value_str = new_value.to_s
                              is_checked = ["Yes", "/Yes", "true"].include?(value_str) || new_value == true
@@ -189,7 +215,13 @@ module AcroThat
                            end
 
         # Encode the normalized value
-        v_token = DictScan.encode_pdf_string(normalized_value)
+        # For checkboxes, use PDF name format to match /AS appearance state format
+        # For radio buttons and other fields, use PDF string format
+        v_token = if is_button_field && !is_radio
+                    DictScan.encode_pdf_name(normalized_value)
+                  else
+                    DictScan.encode_pdf_string(normalized_value)
+                  end
 
         # Find /V using pattern matching to ensure we get the complete key
         v_key_pattern = %r{/V(?=[\s(<\[/])}
@@ -545,34 +577,57 @@ module AcroThat
       end
 
       def create_checkbox_yes_appearance(width, height)
-        # Create a form XObject that draws a checked checkbox
-        # Box outline + checkmark
-        # Scale to match width and height
-        # Simple appearance: draw a box and a checkmark
-        # For simplicity, use PDF drawing operators
-        # Box: rectangle from (0,0) to (width, height)
-        # Checkmark: simple path drawing
-
-        # PDF content stream for checked checkbox
-        # Draw just the checkmark (no box border)
+        line_width = [width * 0.05, height * 0.05].min
         border_width = [width * 0.08, height * 0.08].min
 
-        # Calculate checkmark path
-        check_x1 = width * 0.25
-        check_y1 = height * 0.45
-        check_x2 = width * 0.45
-        check_y2 = height * 0.25
-        check_x3 = width * 0.75
-        check_y3 = height * 0.75
+        # Define checkmark in normalized coordinates (0-1 range) for consistent aspect ratio
+        # Checkmark shape: three points forming a checkmark
+        norm_x1 = 0.25
+        norm_y1 = 0.55
+        norm_x2 = 0.45
+        norm_y2 = 0.35
+        norm_x3 = 0.75
+        norm_y3 = 0.85
+
+        # Calculate scale to maximize size while maintaining aspect ratio
+        # Use the smaller dimension to ensure it fits
+        scale = [width, height].min * 0.85  # Use 85% of the smaller dimension
+        
+        # Calculate checkmark dimensions
+        check_width = scale
+        check_height = scale
+        
+        # Center the checkmark in the box
+        offset_x = (width - check_width) / 2
+        offset_y = (height - check_height) / 2
+        
+        # Calculate actual coordinates
+        check_x1 = offset_x + norm_x1 * check_width
+        check_y1 = offset_y + norm_y1 * check_height
+        check_x2 = offset_x + norm_x2 * check_width
+        check_y2 = offset_y + norm_y2 * check_height
+        check_x3 = offset_x + norm_x3 * check_width
+        check_y3 = offset_y + norm_y3 * check_height
 
         content_stream = "q\n"
-        content_stream += "0 0 0 rg\n" # Black color (darker)
-        content_stream += "#{border_width} w\n" # Line width
-        # Draw checkmark only (no box border)
+        # Draw square border around field bounds
+        content_stream += "0 0 0 RG\n" # Black stroke color
+        content_stream += "#{line_width} w\n" # Line width
+        # Draw rectangle from (0,0) to (width, height)
+        content_stream += "0 0 m\n"
+        content_stream += "#{width} 0 l\n"
+        content_stream += "#{width} #{height} l\n"
+        content_stream += "0 #{height} l\n"
+        content_stream += "0 0 l\n"
+        content_stream += "S\n" # Stroke the border
+
+        # Draw checkmark
+        content_stream += "0 0 0 rg\n" # Black fill color
+        content_stream += "#{border_width} w\n" # Line width for checkmark
         content_stream += "#{check_x1} #{check_y1} m\n"
         content_stream += "#{check_x2} #{check_y2} l\n"
         content_stream += "#{check_x3} #{check_y3} l\n"
-        content_stream += "S\n" # Stroke
+        content_stream += "S\n" # Stroke the checkmark
         content_stream += "Q\n"
 
         build_form_xobject(content_stream, width, height)
