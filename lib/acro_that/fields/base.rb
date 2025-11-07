@@ -77,7 +77,13 @@ module AcroThat
         field_flags = @metadata[:Ff] || 0
         dict += "  /Ff #{field_flags}\n"
 
-        dict += "  /DA (/Helv 0 Tf 0 g)\n"
+        # Apply /DA from metadata for text fields only, or use default
+        if type == "/Tx" && @metadata[:DA]
+          da_value = DictScan.format_pdf_value(@metadata[:DA])
+          dict += "  /DA #{da_value}\n"
+        else
+          dict += "  /DA (/Helv 0 Tf 0 g)\n"
+        end
 
         # Check if this is a radio button (has Radio flag set)
         is_radio_field = field_flags.anybits?(32_768)
@@ -125,9 +131,10 @@ module AcroThat
           end
         end
 
-        # Apply other metadata entries (excluding Ff which we handled above)
+        # Apply other metadata entries (excluding Ff and DA which we handled above)
         @metadata.each do |key, val|
           next if key == :Ff
+          next if key == :DA && type == "/Tx"
 
           pdf_key = DictScan.format_pdf_key(key)
           pdf_value = DictScan.format_pdf_value(val)
@@ -174,17 +181,23 @@ module AcroThat
         widget += "  /Rect #{rect_array}\n"
         widget += "  /F 4\n"
 
-        widget += if is_radio
-                    "  /MK << /BC [0.0] /BG [1.0] >>\n"
-                  else
-                    "  /DA (/Helv 0 Tf 0 g)\n"
-                  end
+        # Apply /DA from metadata for text fields only, otherwise use default behavior
+        if is_radio
+          widget += "  /MK << /BC [0.0] /BG [1.0] >>\n"
+        elsif type == "/Tx" && @metadata[:DA]
+          da_value = DictScan.format_pdf_value(@metadata[:DA])
+          widget += "  /DA #{da_value}\n"
+        else
+          widget += "  /DA (/Helv 0 Tf 0 g)\n"
+        end
 
         @metadata.each do |key, val|
           pdf_key = DictScan.format_pdf_key(key)
           pdf_value = DictScan.format_pdf_value(val)
           next if ["/F", "/V"].include?(pdf_key)
           next if is_radio && ["/Ff", "/DA"].include?(pdf_key)
+          # Skip /DA for text fields since we already handled it above
+          next if pdf_key == "/DA" && type == "/Tx"
 
           widget += "  #{pdf_key} #{pdf_value}\n"
         end
